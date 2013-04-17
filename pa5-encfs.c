@@ -56,6 +56,14 @@
 #include <sys/xattr.h>
 #endif
 
+
+// Report errors to logfile and give -errno to caller
+static int encr_error(char *str)
+{
+    int ret = -errno;
+    fprintf(stderr, "%s",str);
+    return ret;
+}
 //  All the paths I see are relative to the root of the mounted
 //  filesystem.  In order to get to the underlying filesystem, I need to
 //  have the mountpoint.  I'll save it away early on in main(), and then
@@ -82,23 +90,28 @@ static int encr_getattr(const char *path, struct stat *stbuf)
 
 	return 0;
 }
-
+//Updated to fullpath
 static int encr_access(const char *path, int mask)
 {
 	int res;
+	char fpath[PATH_MAX];
+	
+	encr_fullpath(fpath, path);
 
-	res = access(path, mask);
+	res = access(fpath, mask);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to fullpath
 static int encr_readlink(const char *path, char *buf, size_t size)
 {
 	int res;
-
-	res = readlink(path, buf, size - 1);
+	char fpath[PATH_MAX];
+	
+	encr_fullpath(fpath, path);
+	res = readlink(fpath, buf, size - 1);
 	if (res == -1)
 		return -errno;
 
@@ -110,185 +123,250 @@ static int encr_readlink(const char *path, char *buf, size_t size)
 static int encr_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		       off_t offset, struct fuse_file_info *fi)
 {
+	int retstat = 0;
 	DIR *dp;
 	struct dirent *de;
+	
+	//Get rid of unused parameter warnings
+	char fpath[PATH_MAX];
+	encr_fullpath(fpath, path);
+	off_t warn_relief = offset;
+	offset = warn_relief;
 
-	(void) offset;
-	(void) fi;
+	// once again, no need for fullpath -- but note that I need to cast fi->fh
+	//I do not understand this
+	dp = (DIR *) (uintptr_t) fi->fh;
 
-	dp = opendir(path);
-	if (dp == NULL)
-		return -errno;
-
-	while ((de = readdir(dp)) != NULL) {
-		struct stat st;
-		memset(&st, 0, sizeof(st));
-		st.st_ino = de->d_ino;
-		st.st_mode = de->d_type << 12;
-		if (filler(buf, de->d_name, &st, 0))
-			break;
-	}
-
-	closedir(dp);
-	return 0;
+	// Every directory contains at least two entries: . and ..  If my
+    // first call to the system readdir() returns NULL I've got an
+    // error; near as I can tell, that's the only condition under
+    // which I can get an error from readdir()
+    de = readdir(dp);
+    if (de == 0) {
+		retstat = encr_error("encr_readdir readdir");
+		return retstat;
+    }
+    
+    // This will copy the entire directory into the buffer.  The loop exits
+    // when either the system readdir() returns NULL, or filler()
+    // returns something non-zero.  The first case just means I've
+    // read the whole directory; the second means the buffer is full.
+    do {
+		//log_msg("calling filler with name %s\n", de->d_name);
+		if (filler(buf, de->d_name, NULL, 0) != 0) {
+			//log_msg("    ERROR bb_readdir filler:  buffer full");
+			return -ENOMEM;
+		}
+    } while ((de = readdir(dp)) != NULL);
+    
+    
+    return retstat;
 }
-
+//Updated to fullpath
 static int encr_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	int res;
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
 
 	/* On Linux this could just be 'mknod(path, mode, rdev)' but this
 	   is more portable */
 	if (S_ISREG(mode)) {
-		res = open(path, O_CREAT | O_EXCL | O_WRONLY, mode);
+		res = open(fpath, O_CREAT | O_EXCL | O_WRONLY, mode);
 		if (res >= 0)
 			res = close(res);
-	} else if (S_ISFIFO(mode))
-		res = mkfifo(path, mode);
-	else
-		res = mknod(path, mode, rdev);
+	} else if (S_ISFIFO(mode)){
+		res = mkfifo(fpath, mode);
+	} else{
+		res = mknod(fpath, mode, rdev);
+	}
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to fullpath
 static int encr_mkdir(const char *path, mode_t mode)
 {
 	int res;
-
-	res = mkdir(path, mode);
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+	res = mkdir(fpath, mode);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to fullpath
 static int encr_unlink(const char *path)
 {
 	int res;
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
 
-	res = unlink(path);
+	res = unlink(fpath);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_rmdir(const char *path)
 {
 	int res;
-
-	res = rmdir(path);
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+	res = rmdir(fpath);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
+/** Create a symbolic link */
+// The parameters here are a little bit confusing, but do correspond
+// to the symlink() system call.  The 'path' is where the link points,
+// while the 'link' is the link itself.  So we need to leave the path
+// unaltered, but insert the link into the mounted directory.
 static int encr_symlink(const char *from, const char *to)
 {
 	int res;
+	char fto[PATH_MAX];
+    
+    encr_fullpath(fto, to);
 
-	res = symlink(from, to);
+	//retstat = symlink(path, flink);
+	res = symlink(from, fto);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_rename(const char *from, const char *to)
 {
 	int res;
-
-	res = rename(from, to);
+	char fpath[PATH_MAX];
+    char fnewpath[PATH_MAX];
+    
+    encr_fullpath(fpath, from);
+    encr_fullpath(fnewpath, to);
+	
+	res = rename(fpath,fnewpath);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_link(const char *from, const char *to)
 {
 	int res;
+	char fpath[PATH_MAX];
+    char fnewpath[PATH_MAX];
+    
+    encr_fullpath(fpath, from);
+    encr_fullpath(fnewpath, to);
 
-	res = link(from, to);
+	res = link(fpath, fnewpath);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_chmod(const char *path, mode_t mode)
 {
 	int res;
+	char fpath[PATH_MAX];
+   
+    encr_fullpath(fpath, path);
 
-	res = chmod(path, mode);
+	res = chmod(fpath, mode);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_chown(const char *path, uid_t uid, gid_t gid)
 {
 	int res;
+	char fpath[PATH_MAX];
 
-	res = lchown(path, uid, gid);
+    encr_fullpath(fpath, path);
+    
+	res = lchown(fpath, uid, gid);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_truncate(const char *path, off_t size)
 {
 	int res;
-
-	res = truncate(path, size);
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+    
+	res = truncate(fpath, size);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_utimens(const char *path, const struct timespec ts[2])
 {
 	int res;
 	struct timeval tv[2];
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
 
 	tv[0].tv_sec = ts[0].tv_sec;
 	tv[0].tv_usec = ts[0].tv_nsec / 1000;
 	tv[1].tv_sec = ts[1].tv_sec;
 	tv[1].tv_usec = ts[1].tv_nsec / 1000;
 
-	res = utimes(path, tv);
+	res = utimes(fpath, tv);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_open(const char *path, struct fuse_file_info *fi)
 {
 	int res;
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
 
-	res = open(path, fi->flags);
+	res = open(fpath, fi->flags);
 	if (res == -1)
 		return -errno;
 
 	close(res);
 	return 0;
 }
-
+//Updated to full path
 static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
 {
 	int fd;
 	int res;
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
 
 	(void) fi;
-	fd = open(path, O_RDONLY);
+	fd = open(fpath, O_RDONLY);
 	if (fd == -1)
 		return -errno;
 
@@ -299,15 +377,18 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 	close(fd);
 	return res;
 }
-
+//Updated to full path
 static int encr_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	int fd;
 	int res;
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
 
 	(void) fi;
-	fd = open(path, O_WRONLY);
+	fd = open(fpath, O_WRONLY);
 	if (fd == -1)
 		return -errno;
 
@@ -318,24 +399,30 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	close(fd);
 	return res;
 }
-
+//Updated to full path
 static int encr_statfs(const char *path, struct statvfs *stbuf)
 {
 	int res;
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
 
-	res = statvfs(path, stbuf);
+	res = statvfs(fpath, stbuf);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-
+//Updated to full path
 static int encr_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
 
     (void) fi;
+    char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
 
     int res;
-    res = creat(path, mode);
+    res = creat(fpath, mode);
     if(res == -1)
 	return -errno;
 
@@ -367,41 +454,85 @@ static int encr_fsync(const char *path, int isdatasync,
 	return 0;
 }
 
+/** Open directory
+ *
+ * This method should check if the open operation is permitted for
+ * this  directory
+ *
+ * Introduced in version 2.3
+ */
+int encr_opendir(const char *path, struct fuse_file_info *fi)
+{
+    DIR *dp;
+    int retstat = 0;
+    char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+    
+    dp = opendir(fpath);
+    if (dp == NULL)
+		fprintf(stderr,"bb_opendir opendir");
+    
+    fi->fh = (intptr_t) dp;
+    
+    //log_fi(fi);
+    
+    return retstat;
+}
+
+
+
+
 #ifdef HAVE_SETXATTR
+//Updated to full path
 static int encr_setxattr(const char *path, const char *name, const char *value,
 			size_t size, int flags)
 {
-	int res = lsetxattr(path, name, value, size, flags);
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+	int res = lsetxattr(fpath, name, value, size, flags);
 	if (res == -1)
 		return -errno;
 	return 0;
 }
-
+//Updated to full path
 static int encr_getxattr(const char *path, const char *name, char *value,
 			size_t size)
 {
-	int res = lgetxattr(path, name, value, size);
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+	int res = lgetxattr(fpath, name, value, size);
 	if (res == -1)
 		return -errno;
 	return res;
 }
-
+//Updated to full path
 static int encr_listxattr(const char *path, char *list, size_t size)
 {
-	int res = llistxattr(path, list, size);
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+	int res = llistxattr(fpath, list, size);
 	if (res == -1)
 		return -errno;
 	return res;
 }
-
+//Updated to full path
 static int encr_removexattr(const char *path, const char *name)
 {
-	int res = lremovexattr(path, name);
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+	int res = lremovexattr(fpath, name);
 	if (res == -1)
 		return -errno;
 	return 0;
 }
 #endif /* HAVE_SETXATTR */
+
+
 
 static struct fuse_operations encr_oper = {
 	.getattr	= encr_getattr,
@@ -426,6 +557,7 @@ static struct fuse_operations encr_oper = {
 	.create     = encr_create,
 	.release	= encr_release,
 	.fsync		= encr_fsync,
+	.opendir	= encr_opendir,
 #ifdef HAVE_SETXATTR
 	.setxattr	= encr_setxattr,
 	.getxattr	= encr_getxattr,
@@ -464,8 +596,7 @@ int main(int argc, char *argv[])
     // rootpoint or mountpoint whose name starts with a hyphen, but so
     // will a zillion other programs)
     if ((argc < 4) || (argv[argc-2][0] == '-') || (argv[argc-1][0] == '-'))
-    
-    encr_usage();
+		encr_usage();
     encr_data = malloc(sizeof (struct encr_state));
     if(encr_data == NULL){
 		perror("Main, malloc error");
