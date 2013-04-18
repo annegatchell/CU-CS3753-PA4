@@ -29,6 +29,7 @@
 
 */
 #include "params.h"
+#include "aes-crypt.h"
 
 #define FUSE_USE_VERSION 28
 #define HAVE_SETXATTR
@@ -74,6 +75,17 @@ static void encr_fullpath(char fpath[PATH_MAX], const char *path)
     strcpy(fpath, ENCR_DATA->rootdir);
     strncat(fpath, path, PATH_MAX); // ridiculously long paths will
 				    // break here
+}
+
+static void encr_tempfullpath(char feditpath[PATH_MAX], const char *fpath)
+{
+	strcpy(feditpath, fpath);
+    strncat(feditpath, "~temp", PATH_MAX); // ridiculously long paths will
+				    // break here
+}
+
+static char* encr_key(){
+	return ENCR_DATA->key_phrase;
 }
 
 //Updated to fullpath
@@ -193,10 +205,10 @@ static int encr_mkdir(const char *path, mode_t mode)
 	char fpath[PATH_MAX];
     
     encr_fullpath(fpath, path);
+    //Make the directory
 	res = mkdir(fpath, mode);
 	if (res == -1)
 		return -errno;
-
 	return 0;
 }
 //Updated to fullpath
@@ -345,13 +357,48 @@ static int encr_open(const char *path, struct fuse_file_info *fi)
 {
 	int res;
 	char fpath[PATH_MAX];
-    
-    encr_fullpath(fpath, path);
+	char feditpath[PATH_MAX];
+	FILE* inFile;
+	FILE* outFile;
+	
+	encr_fullpath(fpath, path);
+	encr_tempfullpath(feditpath, fpath);
+	/* Set Vars */
+	//Will have to check for decryption status and add a
+	//pass through copy case
+	
+	int action = 0;
+	
+	/* Open Files */
+    inFile = fopen(fpath, "rb");
+    if(!inFile){
+		perror("infile fopen error");
+		return EXIT_FAILURE;
+    }
+    outFile = fopen(feditpath, "wb+");
+    if(!outFile){
+		perror("outfile fopen error");
+		return EXIT_FAILURE;
+    }
+	printf("Open, key phrase %s", encr_key());
+    /* Perform do_crpt action (encrypt, decrypt, copy) */
+    if(!do_crypt(inFile, outFile, action, encr_key())){
+	fprintf(stderr, "do_crypt failed\n");
+    }
 
-	res = open(fpath, fi->flags);
+    /* Cleanup */
+    if(fclose(outFile)){
+        perror("outFile fclose error\n");
+    }
+    if(fclose(inFile)){
+	perror("inFile fclose error\n");
+    }
+	
+	//Open the file for the caller
+	res = open(feditpath, fi->flags);
 	if (res == -1)
 		return -errno;
-
+	
 	close(res);
 	return 0;
 }
@@ -362,11 +409,46 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 	int fd;
 	int res;
 	char fpath[PATH_MAX];
+	char feditpath[PATH_MAX];
+	FILE* inFile;
+	FILE* outFile;
     
     encr_fullpath(fpath, path);
+    encr_tempfullpath(feditpath, fpath);
+	/* Set Vars */
+	//Will have to check for decryption status and add a
+	//pass through copy case
+	
+	int action = 0;
+	
+	/* Open Files */
+    inFile = fopen(fpath, "rb");
+    if(!inFile){
+		perror("infile fopen error");
+		return EXIT_FAILURE;
+    }
+    outFile = fopen(feditpath, "wb+");
+    if(!outFile){
+		perror("outfile fopen error");
+		return EXIT_FAILURE;
+    }
 
+    /* Perform do_crpt action (encrypt, decrypt, copy) */
+    if(!do_crypt(inFile, outFile, action, encr_key())){
+	fprintf(stderr, "do_crypt failed\n");
+    }
+
+    /* Cleanup */
+    if(fclose(outFile)){
+        perror("outFile fclose error\n");
+    }
+    if(fclose(inFile)){
+	perror("inFile fclose error\n");
+    }
+    
+	//Do the read on the new files
 	(void) fi;
-	fd = open(fpath, O_RDONLY);
+	fd = open(feditpath, O_RDONLY);
 	if (fd == -1)
 		return -errno;
 
@@ -384,11 +466,47 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	int fd;
 	int res;
 	char fpath[PATH_MAX];
-    
+    char feditpath[PATH_MAX];
+	FILE* inFile;
+	FILE* outFile;
+	
     encr_fullpath(fpath, path);
+	encr_tempfullpath(feditpath, fpath);
+	/* Set Vars */
+	//Will have to check for decryption status and add a
+	//pass through copy case
+	
+	//Decrypt
+	int action = 0;
+	
+	/* Open Files */
+    inFile = fopen(fpath, "rb");
+    if(!inFile){
+		perror("infile fopen error");
+		return EXIT_FAILURE;
+    }
+    outFile = fopen(feditpath, "wb+");
+    if(!outFile){
+		perror("outfile fopen error");
+		return EXIT_FAILURE;
+    }
 
+    /* Perform do_crpt action (encrypt, decrypt, copy) */
+    if(!do_crypt(inFile, outFile, action, encr_key())){
+	fprintf(stderr, "do_crypt failed\n");
+    }
+
+    /* Cleanup */
+    if(fclose(outFile)){
+        perror("outFile fclose error\n");
+    }
+    if(fclose(inFile)){
+	perror("inFile fclose error\n");
+    }
+	
+	//Do the write
 	(void) fi;
-	fd = open(fpath, O_WRONLY);
+	fd = open(feditpath, O_WRONLY);
 	if (fd == -1)
 		return -errno;
 
@@ -397,6 +515,35 @@ static int encr_write(const char *path, const char *buf, size_t size,
 		res = -errno;
 
 	close(fd);
+	
+	//Now recrypt
+	action = 0;
+	
+	/* Open Files */
+    inFile = fopen(feditpath, "rb");
+    if(!inFile){
+		perror("infile fopen error");
+		return EXIT_FAILURE;
+    }
+    outFile = fopen(fpath, "wb+");
+    if(!outFile){
+		perror("outfile fopen error");
+		return EXIT_FAILURE;
+    }
+
+    /* Perform do_crpt action (encrypt, decrypt, copy) */
+    if(!do_crypt(inFile, outFile, action, encr_key())){
+	fprintf(stderr, "do_crypt failed\n");
+    }
+
+    /* Cleanup */
+    if(fclose(outFile)){
+        perror("outFile fclose error\n");
+    }
+    if(fclose(inFile)){
+	perror("inFile fclose error\n");
+    }
+    
 	return res;
 }
 //Updated to full path
@@ -418,6 +565,8 @@ static int encr_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 
     (void) fi;
     char fpath[PATH_MAX];
+	
+	//Need to add the encrypted flag
     
     encr_fullpath(fpath, path);
 
