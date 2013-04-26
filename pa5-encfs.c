@@ -86,25 +86,38 @@ static void encr_fullpath(char fpath[PATH_MAX], const char *path)
 
 static void encr_tempfilename(char feditpath[PATH_MAX], const char *fpath)
 {
-	char trail[PATH_MAX];
+	char rawpath[PATH_MAX];
 	char rawfilename[PATH_MAX];
 	char prepend[PATH_MAX];
-	strcpy(prepend, "/AA");
-	strcpy(trail, fpath);
+	//strcpy(prepend, "/AA");
+	strcpy(rawpath, fpath);
 	char* token;
-	token = strtok(trail, "/");
-	if(token != NULL)
-			strcpy(rawfilename, token);
+	token = strtok(rawpath, "/");
 	while(token != NULL){
 		printf ("%s\n",token);
+		if(token != NULL)
+			strcpy(rawfilename, token);
 		token = strtok(NULL, "/");
-		
 	}
-	strncat(prepend, rawfilename, PATH_MAX);
-	printf("rawfilename = %s, trail = %s, prepend = %s\n", rawfilename, trail, prepend);
+	
+	//Get size of the raw file name
+	int filename_size = strlen(rawfilename);
+	int fpath_size = strlen(fpath);
+	printf("length filename = %d, length path = %d\n", filename_size, fpath_size);
+	strncpy(prepend, fpath, strlen(fpath)-filename_size -1);
+	strcat(prepend, "/AA");
+	printf("prepend = %s\n", prepend);
+	//Now we have the raw filename with prepended temp symbol,
+	//must now add back to the original path
+	strcat(prepend, rawfilename);
+	printf("rawfilename = %s, rawpath = %s, path = %s\n", rawfilename, rawpath, prepend);
 	strcpy(feditpath, prepend);
      // ridiculously long paths will
 				    // break here
+	memset(rawpath, '\0', sizeof(rawpath));
+	memset(rawfilename, '\0', sizeof(rawfilename));
+	memset(prepend, '\0', sizeof(prepend));
+	
 }
 
 static char* encr_key(){
@@ -492,6 +505,9 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 		res = -errno;
 
 	close(fd);
+	memset(tempfilename, '\0', sizeof(tempfilename));
+	memset(fpath, '\0', sizeof(fpath));
+	memset(feditpath, '\0', sizeof(feditpath));
 	//remove(feditpath);
 	return res;
 }
@@ -623,7 +639,76 @@ static int encr_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 
 static int encr_release(const char *path, struct fuse_file_info *fi)
 {
+	printf("\nPath to release= %s\n", path);
+	//int fd;
+	//int res;
+	char tempfilename[PATH_MAX];
+	char fpath[PATH_MAX];
+	char feditpath[PATH_MAX];
+	//FILE* inFile;
+	//FILE* outFile;
+    
+    encr_tempfilename(tempfilename, path);
+    encr_fullpath(fpath, path);
+    //printf("\nencr_release fpath=\"%s\n", fpath);
+    encr_fullpath(feditpath, tempfilename);
+    
+    printf("\nencr_release fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
 	
+	//Delete the temp file that we had made
+	remove(feditpath);
+	
+	memset(tempfilename, '\0', sizeof(tempfilename));
+	memset(fpath, '\0', sizeof(fpath));
+	memset(feditpath, '\0', sizeof(feditpath));
+	///* Set Vars */
+	////Will have to check for decryption status and add a
+	////pass through copy case
+	
+	////Action = 0 means decryption
+	//int action = 0;
+	
+	///* Open Files */
+    //inFile = fopen(fpath, "rb");
+    //if(!inFile){
+		//perror("infile fopen error");
+		//return EXIT_FAILURE;
+    //}
+    //outFile = fopen(feditpath, "wb+");
+    //if(!outFile){
+		//perror("outfile fopen error");
+		//return EXIT_FAILURE;
+    //}
+
+	//printf("\nOpen, key phrase %s\n", encr_key());
+    ///* Perform do_crpt action (encrypt, decrypt, copy) */
+    //if(!do_crypt(inFile, outFile, action, encr_key())){
+	//fprintf(stderr, "do_crypt failed\n");
+    //}
+
+    ///* Cleanup */
+    //if(fclose(outFile)){
+        //perror("outFile fclose error\n");
+    //}
+    //if(fclose(inFile)){
+	//perror("inFile fclose error\n");
+    //}
+    
+    ////rename(feditpath, fpath);
+    
+	////Do the read on the new files
+	//(void) fi;
+	//fd = open(feditpath, O_RDONLY);
+	//if (fd == -1)
+		//return -errno;
+
+	//res = pread(fd, buf, size, offset);
+	//if (res == -1)
+		//res = -errno;
+
+	//close(fd);
+	////remove(feditpath);
+	//return res;
 
 	(void) path;
 	(void) fi;

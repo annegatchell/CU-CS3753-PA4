@@ -14,13 +14,14 @@
 
 struct encr_file_encr_pair{
 	char *filename;
-	
+	char *tempfilename;
 };
 
 struct encr_state{
 	char *rootdir;
 	char *key_phrase;
 	FILE *logfile;
+	//struct encr_file_encr_pair[];
 	
 };
 #define ENCR_DATA ((struct encr_state *) fuse_get_context()->private_data)

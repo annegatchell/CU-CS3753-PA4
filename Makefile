@@ -22,14 +22,24 @@ FUSE_EXAMPLES = fusehello fusexmp
 XATTR_EXAMPLES = xattr-util
 OPENSSL_EXAMPLES = aes-crypt-util 
 
-.PHONY: all encfs fuse-examples xattr-examples openssl-examples clean
+MOUNTED_DIR = mt
+TEMP_PREFIX = AA
+
+.PHONY: all unmnt encfs fuse-examples xattr-examples openssl-examples clean
 
 all: encfs fuse-examples xattr-examples openssl-examples
+
 
 encfs: $(FUSE_ENCRYPTED)
 fuse-examples: $(FUSE_EXAMPLES)
 xattr-examples: $(XATTR_EXAMPLES)
 openssl-examples: $(OPENSSL_EXAMPLES)
+
+unmnt:
+	fusermount -u $(MOUNTED_DIR)
+	#rm rootdir/$(TEMP_PREFIX)*
+	#rm rootdir/subdir/$(TEMP_PREFIX)*
+	#rm rootdir/subdir/subsubdir/$(TEMP_PREFIX)*
 
 pa5-encfs: pa5-encfs.o aes-crypt.o
 	$(CC) $(LFLAGS) $^ -o $@ $(LLIBSFUSE) $(LLIBSOPENSSL)
