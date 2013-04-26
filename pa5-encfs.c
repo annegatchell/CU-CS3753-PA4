@@ -391,60 +391,6 @@ static int encr_utimens(const char *path, const struct timespec ts[2])
 //Updated to full path
 static int encr_open(const char *path, struct fuse_file_info *fi)
 {
-	int res;
-	char fpath[PATH_MAX];
-	char feditpath[PATH_MAX];
-	FILE* inFile;
-	FILE* outFile;
-	
-	printf("\nencr_open fpath=\"%s", path);
-	encr_fullpath(fpath, path);
-	//encr_tempfullpath(feditpath, fpath);
-	///* Set Vars */
-	////Will have to check for decryption status and add a
-	////pass through copy case
-	
-	//int action = 0;
-	
-	///* Open Files */
-    //inFile = fopen(fpath, "rb");
-    //if(!inFile){
-		//perror("infile fopen error");
-		//return EXIT_FAILURE;
-    //}
-    //outFile = fopen(feditpath, "wb+");
-    //if(!outFile){
-		//perror("outfile fopen error");
-		//return EXIT_FAILURE;
-    //}
-	//printf("\nOpen, key phrase %s\n", encr_key());
-    ///* Perform do_crpt action (encrypt, decrypt, copy) */
-    //if(!do_crypt(inFile, outFile, action, encr_key())){
-	//fprintf(stderr, "do_crypt failed\n");
-    //}
-
-    ///* Cleanup */
-    //if(fclose(outFile)){
-        //perror("outFile fclose error\n");
-    //}
-    //if(fclose(inFile)){
-	//perror("inFile fclose error\n");
-    //}
-    
-    //rename(feditpath, fpath);
-	
-	//Open the file for the caller
-	res = open(fpath, fi->flags);
-	if (res == -1)
-		return -errno;
-	
-	close(res);
-	return 0;
-}
-//Updated to full path
-static int encr_read(const char *path, char *buf, size_t size, off_t offset,
-		    struct fuse_file_info *fi)
-{
 	int fd;
 	int res;
 	char tempfilename[PATH_MAX];
@@ -453,12 +399,12 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 	FILE* inFile;
 	FILE* outFile;
     
-    printf("\nencr_read fpath=\"%s\n", path);
+    printf("\nencr_open fpath=\"%s\n", path);
     encr_tempfilename(tempfilename, path);
     encr_fullpath(fpath, path);
     encr_fullpath(feditpath, tempfilename);
     
-    printf("\nencr_read fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
+    printf("\nencr_open fullpath=\"%s\n decrypted=%s\n\n", fpath, feditpath);
 	/* Set Vars */
 	//Will have to check for decryption status and add a
 	//pass through copy case
@@ -493,6 +439,73 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
     }
     
     //rename(feditpath, fpath);
+ 
+	//Open the file for the caller
+	res = open(feditpath, fi->flags);
+	if (res == -1)
+		return -errno;
+	
+	close(res);
+
+	
+	memset(tempfilename, '\0', sizeof(tempfilename));
+	memset(fpath, '\0', sizeof(fpath));
+	memset(feditpath, '\0', sizeof(feditpath));
+	//remove(feditpath);	
+	return 0;
+}
+//Updated to full path
+static int encr_read(const char *path, char *buf, size_t size, off_t offset,
+		    struct fuse_file_info *fi)
+{
+	int fd;
+	int res;
+	char tempfilename[PATH_MAX];
+	char fpath[PATH_MAX];
+	char feditpath[PATH_MAX];
+	FILE* inFile;
+	FILE* outFile;
+    
+    printf("\nencr_read fpath=\"%s\n", path);
+    encr_tempfilename(tempfilename, path);
+    encr_fullpath(fpath, path);
+    encr_fullpath(feditpath, tempfilename);
+    
+    printf("\nencr_read fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
+	/* Set Vars */
+	//Will have to check for decryption status and add a
+	//pass through copy case
+	
+	////Action = 0 means decryption
+	//int action = 0;
+	
+	///* Open Files */
+    //inFile = fopen(fpath, "rb");
+    //if(!inFile){
+		//perror("infile fopen error");
+		//return EXIT_FAILURE;
+    //}
+    //outFile = fopen(feditpath, "wb+");
+    //if(!outFile){
+		//perror("outfile fopen error");
+		//return EXIT_FAILURE;
+    //}
+
+	//printf("\nRead, key phrase %s\n", encr_key());
+    ///* Perform do_crpt action (encrypt, decrypt, copy) */
+    //if(!do_crypt(inFile, outFile, action, encr_key())){
+	//fprintf(stderr, "do_crypt failed\n");
+    //}
+
+    ///* Cleanup */
+    //if(fclose(outFile)){
+        //perror("outFile fclose error\n");
+    //}
+    //if(fclose(inFile)){
+	//perror("inFile fclose error\n");
+    //}
+    
+    //rename(feditpath, fpath);
     
 	//Do the read on the new files
 	(void) fi;
@@ -524,40 +537,14 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	FILE* outFile;
 	
 	printf("\nencr_write fpath=\"%s", path);
-	encr_tempfilename(tempfilename, fpath);
+	
+    encr_tempfilename(tempfilename, path);
     encr_fullpath(fpath, path);
-	encr_fullpath(feditpath, tempfilename);
+    encr_fullpath(feditpath, tempfilename);
+	
 	/* Set Vars */
 	//Will have to check for decryption status and add a
 	//pass through copy case
-	
-	//Decrypt
-	int action = 0;
-	
-	/* Open Files */
-    inFile = fopen(fpath, "rb");
-    if(!inFile){
-		perror("infile fopen error");
-		return EXIT_FAILURE;
-    }
-    outFile = fopen(feditpath, "wb+");
-    if(!outFile){
-		perror("outfile fopen error");
-		return EXIT_FAILURE;
-    }
-	printf("\nOpen, key phrase %s\n", encr_key());
-    /* Perform do_crpt action (encrypt, decrypt, copy) */
-    if(!do_crypt(inFile, outFile, action, encr_key())){
-	fprintf(stderr, "do_crypt failed\n");
-    }
-
-    /* Cleanup */
-    if(fclose(outFile)){
-        perror("outFile fclose error\n");
-    }
-    if(fclose(inFile)){
-	perror("inFile fclose error\n");
-    }
 	
 	//Do the write
 	(void) fi;
@@ -572,7 +559,10 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	close(fd);
 	
 	//Now recrypt
-	action = 0;
+	int action = 1;
+	
+	//Remove original copy of file
+	remove(fpath);
 	
 	/* Open Files */
     inFile = fopen(feditpath, "rb");
@@ -650,13 +640,15 @@ static int encr_release(const char *path, struct fuse_file_info *fi)
     
     encr_tempfilename(tempfilename, path);
     encr_fullpath(fpath, path);
-    //printf("\nencr_release fpath=\"%s\n", fpath);
+    printf("\nencr_release fpath=\"%s\n", fpath);
     encr_fullpath(feditpath, tempfilename);
     
     printf("\nencr_release fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
 	
 	//Delete the temp file that we had made
-	remove(feditpath);
+	//remove(feditpath);
+	printf("\nNOT DELETING ANYMORE\n");
+
 	
 	memset(tempfilename, '\0', sizeof(tempfilename));
 	memset(fpath, '\0', sizeof(fpath));
