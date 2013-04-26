@@ -84,10 +84,26 @@ static void encr_fullpath(char fpath[PATH_MAX], const char *path)
 				    // break here
 }
 
-static void encr_tempfullpath(char feditpath[PATH_MAX], const char *fpath)
+static void encr_tempfilename(char feditpath[PATH_MAX], const char *fpath)
 {
-	strcpy(feditpath, fpath);
-    strncat(feditpath, "~temp", PATH_MAX); // ridiculously long paths will
+	char trail[PATH_MAX];
+	char rawfilename[PATH_MAX];
+	char prepend[PATH_MAX];
+	strcpy(prepend, "/AA");
+	strcpy(trail, fpath);
+	char* token;
+	token = strtok(trail, "/");
+	if(token != NULL)
+			strcpy(rawfilename, token);
+	while(token != NULL){
+		printf ("%s\n",token);
+		token = strtok(NULL, "/");
+		
+	}
+	strncat(prepend, rawfilename, PATH_MAX);
+	printf("rawfilename = %s, trail = %s, prepend = %s\n", rawfilename, trail, prepend);
+	strcpy(feditpath, prepend);
+     // ridiculously long paths will
 				    // break here
 }
 
@@ -418,18 +434,23 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 {
 	int fd;
 	int res;
+	char tempfilename[PATH_MAX];
 	char fpath[PATH_MAX];
 	char feditpath[PATH_MAX];
 	FILE* inFile;
 	FILE* outFile;
     
-    printf("\nencr_read fpath=\"%s", path);
+    printf("\nencr_read fpath=\"%s\n", path);
+    encr_tempfilename(tempfilename, path);
     encr_fullpath(fpath, path);
-    encr_tempfullpath(feditpath, fpath);
+    encr_fullpath(feditpath, tempfilename);
+    
+    printf("\nencr_read fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
 	/* Set Vars */
 	//Will have to check for decryption status and add a
 	//pass through copy case
 	
+	//Action = 0 means decryption
 	int action = 0;
 	
 	/* Open Files */
@@ -458,11 +479,11 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 	perror("inFile fclose error\n");
     }
     
-    rename(feditpath, fpath);
+    //rename(feditpath, fpath);
     
 	//Do the read on the new files
 	(void) fi;
-	fd = open(fpath, O_RDONLY);
+	fd = open(feditpath, O_RDONLY);
 	if (fd == -1)
 		return -errno;
 
@@ -482,12 +503,14 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	int res;
 	char fpath[PATH_MAX];
     char feditpath[PATH_MAX];
+    char tempfilename[PATH_MAX];
 	FILE* inFile;
 	FILE* outFile;
 	
 	printf("\nencr_write fpath=\"%s", path);
+	encr_tempfilename(tempfilename, fpath);
     encr_fullpath(fpath, path);
-	encr_tempfullpath(feditpath, fpath);
+	encr_fullpath(feditpath, tempfilename);
 	/* Set Vars */
 	//Will have to check for decryption status and add a
 	//pass through copy case
@@ -600,8 +623,7 @@ static int encr_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 
 static int encr_release(const char *path, struct fuse_file_info *fi)
 {
-	/* Just a stub.	 This method is optional and can safely be left
-	   unimplemented */
+	
 
 	(void) path;
 	(void) fi;

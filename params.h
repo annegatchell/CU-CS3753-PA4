@@ -12,10 +12,16 @@
 //#define _PARAMS_H_
 #include <stdio.h>
 
+struct encr_file_encr_pair{
+	char *filename;
+	
+};
+
 struct encr_state{
 	char *rootdir;
 	char *key_phrase;
 	FILE *logfile;
+	
 };
 #define ENCR_DATA ((struct encr_state *) fuse_get_context()->private_data)
 
