@@ -73,6 +73,9 @@ Build OpenSSL/AES Examples and Utilities:
 
 Clean:
  make clean
+***Encryption Assingment Files***
+Mount folder to mount point and give password for encryption
+./pa5-encfs <Key Phrase> <Mirror Directory> <Mount Point>
 
 ***FUSE Examples***
 

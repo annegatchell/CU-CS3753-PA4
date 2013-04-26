@@ -57,6 +57,13 @@
 #include <sys/xattr.h>
 #endif
 
+void log_msg(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+
+    vfprintf(ENCR_DATA->logfile, format, ap);
+}
 
 // Report errors to logfile and give -errno to caller
 static int encr_error(char *str)
@@ -361,41 +368,44 @@ static int encr_open(const char *path, struct fuse_file_info *fi)
 	FILE* inFile;
 	FILE* outFile;
 	
+	printf("\nencr_open fpath=\"%s", path);
 	encr_fullpath(fpath, path);
-	encr_tempfullpath(feditpath, fpath);
-	/* Set Vars */
-	//Will have to check for decryption status and add a
-	//pass through copy case
+	//encr_tempfullpath(feditpath, fpath);
+	///* Set Vars */
+	////Will have to check for decryption status and add a
+	////pass through copy case
 	
-	int action = 0;
+	//int action = 0;
 	
-	/* Open Files */
-    inFile = fopen(fpath, "rb");
-    if(!inFile){
-		perror("infile fopen error");
-		return EXIT_FAILURE;
-    }
-    outFile = fopen(feditpath, "wb+");
-    if(!outFile){
-		perror("outfile fopen error");
-		return EXIT_FAILURE;
-    }
-	printf("Open, key phrase %s", encr_key());
-    /* Perform do_crpt action (encrypt, decrypt, copy) */
-    if(!do_crypt(inFile, outFile, action, encr_key())){
-	fprintf(stderr, "do_crypt failed\n");
-    }
+	///* Open Files */
+    //inFile = fopen(fpath, "rb");
+    //if(!inFile){
+		//perror("infile fopen error");
+		//return EXIT_FAILURE;
+    //}
+    //outFile = fopen(feditpath, "wb+");
+    //if(!outFile){
+		//perror("outfile fopen error");
+		//return EXIT_FAILURE;
+    //}
+	//printf("\nOpen, key phrase %s\n", encr_key());
+    ///* Perform do_crpt action (encrypt, decrypt, copy) */
+    //if(!do_crypt(inFile, outFile, action, encr_key())){
+	//fprintf(stderr, "do_crypt failed\n");
+    //}
 
-    /* Cleanup */
-    if(fclose(outFile)){
-        perror("outFile fclose error\n");
-    }
-    if(fclose(inFile)){
-	perror("inFile fclose error\n");
-    }
+    ///* Cleanup */
+    //if(fclose(outFile)){
+        //perror("outFile fclose error\n");
+    //}
+    //if(fclose(inFile)){
+	//perror("inFile fclose error\n");
+    //}
+    
+    //rename(feditpath, fpath);
 	
 	//Open the file for the caller
-	res = open(feditpath, fi->flags);
+	res = open(fpath, fi->flags);
 	if (res == -1)
 		return -errno;
 	
@@ -413,6 +423,7 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 	FILE* inFile;
 	FILE* outFile;
     
+    printf("\nencr_read fpath=\"%s", path);
     encr_fullpath(fpath, path);
     encr_tempfullpath(feditpath, fpath);
 	/* Set Vars */
@@ -433,6 +444,7 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 		return EXIT_FAILURE;
     }
 
+	printf("\nOpen, key phrase %s\n", encr_key());
     /* Perform do_crpt action (encrypt, decrypt, copy) */
     if(!do_crypt(inFile, outFile, action, encr_key())){
 	fprintf(stderr, "do_crypt failed\n");
@@ -446,9 +458,11 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 	perror("inFile fclose error\n");
     }
     
+    rename(feditpath, fpath);
+    
 	//Do the read on the new files
 	(void) fi;
-	fd = open(feditpath, O_RDONLY);
+	fd = open(fpath, O_RDONLY);
 	if (fd == -1)
 		return -errno;
 
@@ -457,6 +471,7 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 		res = -errno;
 
 	close(fd);
+	//remove(feditpath);
 	return res;
 }
 //Updated to full path
@@ -470,6 +485,7 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	FILE* inFile;
 	FILE* outFile;
 	
+	printf("\nencr_write fpath=\"%s", path);
     encr_fullpath(fpath, path);
 	encr_tempfullpath(feditpath, fpath);
 	/* Set Vars */
@@ -490,7 +506,7 @@ static int encr_write(const char *path, const char *buf, size_t size,
 		perror("outfile fopen error");
 		return EXIT_FAILURE;
     }
-
+	printf("\nOpen, key phrase %s\n", encr_key());
     /* Perform do_crpt action (encrypt, decrypt, copy) */
     if(!do_crypt(inFile, outFile, action, encr_key())){
 	fprintf(stderr, "do_crypt failed\n");
@@ -543,6 +559,7 @@ static int encr_write(const char *path, const char *buf, size_t size,
     if(fclose(inFile)){
 	perror("inFile fclose error\n");
     }
+    remove(feditpath);
     
 	return res;
 }
@@ -567,7 +584,7 @@ static int encr_create(const char* path, mode_t mode, struct fuse_file_info* fi)
     char fpath[PATH_MAX];
 	
 	//Need to add the encrypted flag
-    
+    printf("\nencr_create fpath=\"%s", path);
     encr_fullpath(fpath, path);
 
     int res;
@@ -620,7 +637,7 @@ int encr_opendir(const char *path, struct fuse_file_info *fi)
     
     dp = opendir(fpath);
     if (dp == NULL)
-		fprintf(stderr,"bb_opendir opendir");
+		fprintf(stderr,"encr_opendir opendir");
     
     fi->fh = (intptr_t) dp;
     
@@ -720,6 +737,26 @@ void encr_usage(){
 	abort();
 }
 
+FILE *log_open()
+{
+    FILE *logfile;
+    
+    // very first thing, open up the logfile and mark that we got in
+    // here.  If we can't open the logfile, we're dead.
+    logfile = fopen("bbfs.log", "w");
+    if (logfile == NULL) {
+	perror("logfile");
+	exit(EXIT_FAILURE);
+    }
+    
+    // set logfile to line buffering
+    setvbuf(logfile, NULL, _IOLBF, 0);
+
+    return logfile;
+}
+
+
+
 int main(int argc, char *argv[])
 {
 	struct encr_state *encr_data; //place to store my private data
@@ -756,6 +793,7 @@ int main(int argc, char *argv[])
     // internal data
     encr_data->rootdir = realpath(argv[argc-2], NULL);
     encr_data->key_phrase = argv[argc-3];
+    encr_data->logfile = log_open();
     argv[argc-3] = argv[argc-1]; //Move the mount point to the first arg
     argv[argc-2] = NULL; //Set later args to null
     argv[argc-1] = NULL;
