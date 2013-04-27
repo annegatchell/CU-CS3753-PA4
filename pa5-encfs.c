@@ -391,7 +391,6 @@ static int encr_utimens(const char *path, const struct timespec ts[2])
 //Updated to full path
 static int encr_open(const char *path, struct fuse_file_info *fi)
 {
-	int fd;
 	int res;
 	char tempfilename[PATH_MAX];
 	char fpath[PATH_MAX];
@@ -446,7 +445,6 @@ static int encr_open(const char *path, struct fuse_file_info *fi)
 		return -errno;
 	
 	close(res);
-
 	
 	memset(tempfilename, '\0', sizeof(tempfilename));
 	memset(fpath, '\0', sizeof(fpath));
@@ -463,8 +461,8 @@ static int encr_read(const char *path, char *buf, size_t size, off_t offset,
 	char tempfilename[PATH_MAX];
 	char fpath[PATH_MAX];
 	char feditpath[PATH_MAX];
-	FILE* inFile;
-	FILE* outFile;
+	//FILE* inFile;
+	//FILE* outFile;
     
     printf("\nencr_read fpath=\"%s\n", path);
     encr_tempfilename(tempfilename, path);
@@ -536,15 +534,24 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	FILE* inFile;
 	FILE* outFile;
 	
-	printf("\nencr_write fpath=\"%s", path);
+	printf("\nencr_write fpath=\"%s\n", path);
 	
     encr_tempfilename(tempfilename, path);
     encr_fullpath(fpath, path);
     encr_fullpath(feditpath, tempfilename);
 	
+	printf("\nencr_write fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
 	/* Set Vars */
 	//Will have to check for decryption status and add a
 	//pass through copy case
+	
+	if( access(feditpath, F_OK ) != -1 ) {
+		// file exists
+		printf("\nencr_write: %s exists\n", feditpath);
+	} else {
+		int fd2 = open(feditpath, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
+		printf("\nencr_write: %s does not exist\n", feditpath);
+	}
 	
 	//Do the write
 	(void) fi;
@@ -562,7 +569,136 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	int action = 1;
 	
 	//Remove original copy of file
-	remove(fpath);
+
+    if( access(fpath, F_OK ) != -1 ) {
+		// file exists
+		remove(fpath);
+		printf("\nencr_write: %s exists\n", feditpath);
+	} else{
+		printf("\nencr_write: %s does not exist\n", feditpath);
+	}
+
+	/* Open Files */
+    inFile = fopen(feditpath, "rb");
+    if(!inFile){
+		perror("infile fopen error");
+		return EXIT_FAILURE;
+    }
+    outFile = fopen(fpath, "wb+");
+    if(!outFile){
+		perror("outfile fopen error");
+		return EXIT_FAILURE;
+    }
+
+    /* Perform do_crpt action (encrypt, decrypt, copy) */
+    if(!do_crypt(inFile, outFile, action, encr_key())){
+	fprintf(stderr, "do_crypt failed\n");
+    }
+
+    /* Cleanup */
+    if(fclose(outFile)){
+        perror("outFile fclose error\n");
+    }
+    if(fclose(inFile)){
+	perror("inFile fclose error\n");
+    }
+    //Remove the temp file
+    remove(feditpath);
+    
+    //Clear the old char arrays
+    memset(tempfilename, '\0', sizeof(tempfilename));
+	memset(fpath, '\0', sizeof(fpath));
+	memset(feditpath, '\0', sizeof(feditpath));
+	return res;
+}
+//Updated to full path
+static int encr_statfs(const char *path, struct statvfs *stbuf)
+{
+	int res;
+	char fpath[PATH_MAX];
+    
+    encr_fullpath(fpath, path);
+
+	res = statvfs(fpath, stbuf);
+	if (res == -1)
+		return -errno;
+
+	return 0;
+}
+static int encr_flush(const char *path, struct fuse_file_info *fi){
+	printf("\nencr_flush fpath=\"%s\n", path);
+	
+	(void) fi;
+	char fpath[PATH_MAX];
+    char feditpath[PATH_MAX];
+    char tempfilename[PATH_MAX];
+	//FILE* inFile;
+	//FILE* outFile;
+	
+	printf("\nencr_flush fpath=\"%s\n", path);
+	
+	//Get a temporary file to write to
+    encr_tempfilename(tempfilename, path);
+    encr_fullpath(fpath, path);
+    encr_fullpath(feditpath, tempfilename);
+    
+	printf("\nencr_flush fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
+	
+	
+	
+	return 0;
+}
+//Updated to full path
+static int encr_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
+
+    (void) fi;
+    int res;
+	char fpath[PATH_MAX];
+    char feditpath[PATH_MAX];
+    char tempfilename[PATH_MAX];
+	FILE* inFile;
+	FILE* outFile;
+	
+	printf("\nencr_create fpath=\"%s\n", path);
+	
+	//Get a temporary file to write to
+    encr_tempfilename(tempfilename, path);
+    encr_fullpath(fpath, path);
+    encr_fullpath(feditpath, tempfilename);
+	
+	printf("\nencr_create fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
+
+	//Create the file with open for the caller
+	res = open(feditpath, O_CREAT|O_TRUNC|O_RDWR, mode);
+	if (res == -1)
+	{
+		printf("\nencr_create: file creation failed\n");
+		return -errno;
+	}
+	
+	if( access(feditpath, F_OK ) != -1 ) {
+		// file exists
+		printf("\nencr_create: %s exists\n", feditpath);
+	} else {
+		int fd2 = open(feditpath, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
+		printf("\nencr_create: %s does not exist\n", feditpath);
+	}
+	
+	close(res);
+
+//CREATE WITH CREAT
+	/*
+    int res;
+    res = creat(feditpath, mode);
+    if(res == -1)
+	//return -errno;
+
+    close(res);
+	*/
+	
+	
+	//Now encrypt
+	int action = 1;
 	
 	/* Open Files */
     inFile = fopen(feditpath, "rb");
@@ -588,41 +724,15 @@ static int encr_write(const char *path, const char *buf, size_t size,
     if(fclose(inFile)){
 	perror("inFile fclose error\n");
     }
+    
+    //Remove the temp file
     remove(feditpath);
-    
-	return res;
-}
-//Updated to full path
-static int encr_statfs(const char *path, struct statvfs *stbuf)
-{
-	int res;
-	char fpath[PATH_MAX];
-    
-    encr_fullpath(fpath, path);
-
-	res = statvfs(fpath, stbuf);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-//Updated to full path
-static int encr_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
-
-    (void) fi;
-    char fpath[PATH_MAX];
+   
+	//Clear the char arrays
+	memset(tempfilename, '\0', sizeof(tempfilename));
+	memset(fpath, '\0', sizeof(fpath));
+	memset(feditpath, '\0', sizeof(feditpath));
 	
-	//Need to add the encrypted flag
-    printf("\nencr_create fpath=\"%s", path);
-    encr_fullpath(fpath, path);
-
-    int res;
-    res = creat(fpath, mode);
-    if(res == -1)
-	return -errno;
-
-    close(res);
-
     return 0;
 }
 
@@ -646,9 +756,7 @@ static int encr_release(const char *path, struct fuse_file_info *fi)
     printf("\nencr_release fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
 	
 	//Delete the temp file that we had made
-	//remove(feditpath);
-	printf("\nNOT DELETING ANYMORE\n");
-
+	remove(feditpath);
 	
 	memset(tempfilename, '\0', sizeof(tempfilename));
 	memset(fpath, '\0', sizeof(fpath));
@@ -823,6 +931,7 @@ static struct fuse_operations encr_oper = {
 	.release	= encr_release,
 	.fsync		= encr_fsync,
 	.opendir	= encr_opendir,
+	.flush		= encr_flush,
 #ifdef HAVE_SETXATTR
 	.setxattr	= encr_setxattr,
 	.getxattr	= encr_getxattr,
