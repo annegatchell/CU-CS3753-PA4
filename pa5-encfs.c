@@ -544,19 +544,29 @@ static int encr_write(const char *path, const char *buf, size_t size,
 	/* Set Vars */
 	//Will have to check for decryption status and add a
 	//pass through copy case
-	
+	printf("\n-2\n");
 	if( access(feditpath, F_OK ) != -1 ) {
 		// file exists
 		printf("\nencr_write: %s exists\n", feditpath);
 	} else {
-		int fd2 = open(feditpath, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
+		int fd2 = open(feditpath, O_CREAT | O_APPEND, S_IRUSR | S_IWUSR );
 		printf("\nencr_write: %s does not exist\n", feditpath);
 	}
-	
+	printf("\n-1\n");
+	if( access(fpath, F_OK ) != -1 ) {
+		// file exists
+		printf("\nencr_write: %s exists\n", fpath);
+	} else {
+		int fd2 = open(fpath, O_CREAT | O_APPEND, S_IRUSR | S_IWUSR );
+		printf("\nencr_write: %s does not exist\n", fpath);
+	}
+	printf("\n1\n");
 	//Do the write
-	(void) fi;
+	
 	fd = open(feditpath, O_WRONLY);
-	if (fd == -1)
+	//fd = open(feditpath, O_RDWR | O_APPEND, S_IRUSR | S_IWUSR );
+	if (fd < 0)
+		printf("\nencr_write: Problem opening for write\n");
 		return -errno;
 
 	res = pwrite(fd, buf, size, offset);
@@ -564,7 +574,7 @@ static int encr_write(const char *path, const char *buf, size_t size,
 		res = -errno;
 
 	close(fd);
-	
+	printf("\n2\n");
 	//Now recrypt
 	int action = 1;
 	
@@ -573,9 +583,9 @@ static int encr_write(const char *path, const char *buf, size_t size,
     if( access(fpath, F_OK ) != -1 ) {
 		// file exists
 		remove(fpath);
-		printf("\nencr_write: %s exists\n", feditpath);
+		printf("\nencr_write: %s exists\n", fpath);
 	} else{
-		printf("\nencr_write: %s does not exist\n", feditpath);
+		printf("\nencr_write: %s does not exist\n", fpath);
 	}
 
 	/* Open Files */
@@ -604,7 +614,7 @@ static int encr_write(const char *path, const char *buf, size_t size,
     }
     //Remove the temp file
     remove(feditpath);
-    
+    (void) fi;
     //Clear the old char arrays
     memset(tempfilename, '\0', sizeof(tempfilename));
 	memset(fpath, '\0', sizeof(fpath));
@@ -632,7 +642,7 @@ static int encr_flush(const char *path, struct fuse_file_info *fi){
 	char fpath[PATH_MAX];
     char feditpath[PATH_MAX];
     char tempfilename[PATH_MAX];
-	//FILE* inFile;
+	FILE* inFile;
 	//FILE* outFile;
 	
 	printf("\nencr_flush fpath=\"%s\n", path);
@@ -643,6 +653,10 @@ static int encr_flush(const char *path, struct fuse_file_info *fi){
     encr_fullpath(feditpath, tempfilename);
     
 	printf("\nencr_flush fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
+	
+	//inFile = fopen(fpath, "rb");
+	//fflush(inFile);
+	
 	
 	
 	
@@ -668,65 +682,85 @@ static int encr_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 	
 	printf("\nencr_create fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
 
-	//Create the file with open for the caller
-	res = open(feditpath, O_CREAT|O_TRUNC|O_RDWR, mode);
-	if (res == -1)
+	//close(res);
+	//if( access(feditpath, F_OK ) != -1 ) {
+		//// file exists
+		//printf("\nencr_create: %s exists\n", feditpath);
+	//} else {
+		//int fd2 = open(feditpath, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
+		//printf("\nencr_create: %s does not exist\n", feditpath);
+	//}
+	//printf("CREAT mode %d", mode);
+	printf("\n1\n");
+	//Create the original encrypted file
+	//res = open(fpath, O_CREAT|O_WRONLY|O_TRUNC, S_IRUSR|S_IWUSR);
+	res = creat(fpath, 0666);
+    if(res < 0)
 	{
 		printf("\nencr_create: file creation failed\n");
 		return -errno;
 	}
-	
-	if( access(feditpath, F_OK ) != -1 ) {
-		// file exists
-		printf("\nencr_create: %s exists\n", feditpath);
-	} else {
-		int fd2 = open(feditpath, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
-		printf("\nencr_create: %s does not exist\n", feditpath);
-	}
-	
-	close(res);
-
-//CREATE WITH CREAT
-	/*
-    int res;
-    res = creat(feditpath, mode);
-    if(res == -1)
-	//return -errno;
-
     close(res);
-	*/
-	
-	
-	//Now encrypt
-	int action = 1;
-	
-	/* Open Files */
-    inFile = fopen(feditpath, "rb");
-    if(!inFile){
-		perror("infile fopen error");
-		return EXIT_FAILURE;
-    }
-    outFile = fopen(fpath, "wb+");
-    if(!outFile){
-		perror("outfile fopen error");
-		return EXIT_FAILURE;
-    }
-
-    /* Perform do_crpt action (encrypt, decrypt, copy) */
-    if(!do_crypt(inFile, outFile, action, encr_key())){
-	fprintf(stderr, "do_crypt failed\n");
-    }
-
-    /* Cleanup */
-    if(fclose(outFile)){
-        perror("outFile fclose error\n");
-    }
-    if(fclose(inFile)){
-	perror("inFile fclose error\n");
-    }
     
-    //Remove the temp file
-    remove(feditpath);
+    printf("\n2\n");
+	//Create the editfile with open for the caller
+	//res = open(feditpath, O_CREAT|O_WRONLY|O_TRUNC, S_IRUSR|S_IWUSR);
+	res = creat(feditpath, 0666);
+	if (res < 0)
+	{
+		printf("\nencr_create: file creation failed\n");
+		return -errno;
+	}
+	close(res);
+    printf("\n3\n");
+    
+    //Open the edifile for the caller
+	//res = open(feditpath, O_RDWR);
+	//if (res < 0)
+		//printf("\nencr_create: file open failed\n");
+		//return -errno;
+	
+	//close(res);
+    printf("\n4\n");
+//CREATE WITH CREAT
+    //res = creat(feditpath, mode);
+    //if(res == -1)
+	//{
+		//printf("\nencr_create: file creation failed\n");
+		//return -errno;
+	//}
+    //close(res);
+	
+	////Now encrypt
+	//int action = 1;
+	
+	///* Open Files */
+    //inFile = fopen(feditpath, "rb");
+    //if(!inFile){
+		//perror("infile fopen error");
+		//return EXIT_FAILURE;
+    //}
+    //outFile = fopen(fpath, "wb+");
+    //if(!outFile){
+		//perror("outfile fopen error");
+		//return EXIT_FAILURE;
+    //}
+
+    ///* Perform do_crpt action (encrypt, decrypt, copy) */
+    //if(!do_crypt(inFile, outFile, action, encr_key())){
+	//fprintf(stderr, "do_crypt failed\n");
+    //}
+
+    ///* Cleanup */
+    //if(fclose(outFile)){
+        //perror("outFile fclose error\n");
+    //}
+    //if(fclose(inFile)){
+	//perror("inFile fclose error\n");
+    //}
+    
+    ////Remove the temp file
+    //remove(feditpath);
    
 	//Clear the char arrays
 	memset(tempfilename, '\0', sizeof(tempfilename));
