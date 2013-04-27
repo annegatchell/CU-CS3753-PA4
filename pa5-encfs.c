@@ -646,8 +646,8 @@ static int encr_release(const char *path, struct fuse_file_info *fi)
     printf("\nencr_release fullpath=\"%s\n decrypted=%s\n", fpath, feditpath);
 	
 	//Delete the temp file that we had made
-	//remove(feditpath);
-	printf("\nNOT DELETING ANYMORE\n");
+	remove(feditpath);
+	//printf("\nNOT DELETING ANYMORE\n");
 
 	
 	memset(tempfilename, '\0', sizeof(tempfilename));
